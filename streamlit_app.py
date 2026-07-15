@@ -95,6 +95,16 @@ st.title("Chat with Your Warehouse ❄️")
 st.caption("Ask your Snowflake insurance-claims data questions in plain English.")
 
 with st.sidebar:
+    st.header("Your OpenAI API key")
+    api_key = st.text_input(
+        "sk-...",
+        type="password",
+        placeholder="Paste your OpenAI API key",
+        help="Your key is used only for this session and never stored.",
+    )
+    st.caption("[Get a key →](https://platform.openai.com/api-keys)")
+
+    st.divider()
     st.header("Try a question")
     for q in SAMPLE_QUESTIONS:
         if st.button(q, use_container_width=True):
@@ -121,6 +131,10 @@ question: str | None = st.chat_input("Ask a question about the claims data…")
 if "pending_question" in st.session_state:
     question = st.session_state.pop("pending_question")
 
+if not api_key:
+    st.info("Enter your OpenAI API key in the sidebar to get started.", icon="🔑")
+    st.stop()
+
 if question:
     if st.session_state.request_count >= MAX_REQUESTS_PER_SESSION:
         st.warning("Session limit reached. Refresh the page to start a new session.")
@@ -135,7 +149,7 @@ if question:
     schema = load_schema()
     with st.chat_message("assistant"):
         with st.spinner("Thinking…"):
-            result = run_agent(question, schema, _history_for_agent())
+            result = run_agent(question, schema, _history_for_agent(), api_key)
 
         assistant_msg = {
             "role": "assistant",

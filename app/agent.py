@@ -16,6 +16,7 @@ class AgentState(TypedDict):
     question: str
     schema: str
     history: list[dict]   # [{"role": "user"|"assistant", "content": str}]
+    api_key: str
     sql: str
     result_json: str
     answer: str
@@ -50,7 +51,7 @@ Rules:
   CLARIFY: <one specific question to ask the user>
 - Return ONLY raw SQL or the CLARIFY line. No markdown fences, no explanation.
 """
-    response = get_llm().invoke(prompt)
+    response = get_llm(state["api_key"]).invoke(prompt)
     sql = response.content.strip().removeprefix("```sql").removesuffix("```").strip()
     return {"sql": sql, "error": "", "retries": 0}
 
@@ -92,7 +93,7 @@ Error message:
 
 Return ONLY the corrected SQL. No markdown, no explanation.
 """
-    response = get_llm().invoke(prompt)
+    response = get_llm(state["api_key"]).invoke(prompt)
     sql = response.content.strip().removeprefix("```sql").removesuffix("```").strip()
     return {"sql": sql, "retries": state["retries"] + 1}
 
@@ -126,7 +127,7 @@ Results (up to {MAX_PREVIEW_ROWS} of {len(records)} rows shown):
 
 Write a concise, specific answer in 2-3 sentences. Include key numbers. Do not mention SQL.
 """
-    response = get_llm().invoke(prompt)
+    response = get_llm(state["api_key"]).invoke(prompt)
     return {"answer": response.content.strip()}
 
 
@@ -171,12 +172,13 @@ def _build_graph() -> StateGraph:
 graph = _build_graph().compile()
 
 
-def run_agent(question: str, schema: str, history: list[dict]) -> dict:
+def run_agent(question: str, schema: str, history: list[dict], api_key: str) -> dict:
     """Returns dict with keys: answer, sql, result_json, retries."""
     initial: AgentState = {
         "question": question,
         "schema": schema,
         "history": history,
+        "api_key": api_key,
         "sql": "",
         "result_json": "",
         "answer": "",
