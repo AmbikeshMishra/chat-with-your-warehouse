@@ -1,0 +1,148 @@
+import json
+
+import pandas as pd
+import plotly.express as px
+import streamlit as st
+
+from app.agent import run_agent
+from app.schema_loader import load_schema
+
+# ── Config ────────────────────────────────────────────────────────────────────
+
+MAX_REQUESTS_PER_SESSION = 20
+
+SAMPLE_QUESTIONS = [
+    "Which region had the highest claim payouts last quarter?",
+    "What is the average claim amount by insurance type?",
+    "How many claims were filed per month this year?",
+    "Which policy holders have more than 3 claims?",
+    "What percentage of claims were denied vs approved?",
+    "Show me the top 5 largest approved claims.",
+    "What is the total payout by claim type?",
+]
+
+st.set_page_config(page_title="Chat with Your Warehouse", page_icon="❄️", layout="wide")
+
+
+# ── Session state init ─────────────────────────────────────────────────────────
+
+if "messages" not in st.session_state:
+    st.session_state.messages = []   # [{"role": ..., "content": ..., "sql": ..., "result_json": ...}]
+if "request_count" not in st.session_state:
+    st.session_state.request_count = 0
+
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
+
+def _try_chart(result_json: str) -> None:
+    if not result_json or result_json == "[]":
+        return
+    try:
+        df = pd.DataFrame(json.loads(result_json))
+    except Exception:
+        return
+    if df.empty:
+        return
+
+    numeric = df.select_dtypes(include="number").columns.tolist()
+    dates = df.select_dtypes(include=["datetime", "datetimetz"]).columns.tolist()
+    cats = df.select_dtypes(include=["object", "category"]).columns.tolist()
+
+    # Try to coerce string columns that look like dates
+    if not dates and cats:
+        for col in cats:
+            try:
+                df[col] = pd.to_datetime(df[col])
+                dates.append(col)
+                cats.remove(col)
+                break
+            except Exception:
+                pass
+
+    if not numeric:
+        return
+
+    y = numeric[0]
+    if dates:
+        fig = px.line(df, x=dates[0], y=y, markers=True)
+    elif cats:
+        fig = px.bar(df, x=cats[0], y=y)
+    else:
+        return
+
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def _render_assistant_message(msg: dict) -> None:
+    st.write(msg["content"])
+    _try_chart(msg.get("result_json", ""))
+    if msg.get("sql"):
+        with st.expander("Show SQL", expanded=False):
+            st.code(msg["sql"], language="sql")
+
+
+def _history_for_agent() -> list[dict]:
+    """Convert session messages to plain text pairs for the agent prompt."""
+    out = []
+    for m in st.session_state.messages:
+        out.append({"role": m["role"], "content": m["content"]})
+    return out
+
+
+# ── Layout ─────────────────────────────────────────────────────────────────────
+
+st.title("Chat with Your Warehouse ❄️")
+st.caption("Ask your Snowflake insurance-claims data questions in plain English.")
+
+with st.sidebar:
+    st.header("Try a question")
+    for q in SAMPLE_QUESTIONS:
+        if st.button(q, use_container_width=True):
+            st.session_state["pending_question"] = q
+
+    st.divider()
+    used = st.session_state.request_count
+    st.caption(f"Requests this session: {used} / {MAX_REQUESTS_PER_SESSION}")
+    if st.button("Clear conversation", use_container_width=True):
+        st.session_state.messages = []
+        st.session_state.request_count = 0
+        st.rerun()
+
+# Render history
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        if msg["role"] == "assistant":
+            _render_assistant_message(msg)
+        else:
+            st.write(msg["content"])
+
+# Collect input (typed or sidebar button)
+question: str | None = st.chat_input("Ask a question about the claims data…")
+if "pending_question" in st.session_state:
+    question = st.session_state.pop("pending_question")
+
+if question:
+    if st.session_state.request_count >= MAX_REQUESTS_PER_SESSION:
+        st.warning("Session limit reached. Refresh the page to start a new session.")
+        st.stop()
+
+    # Show user message immediately
+    st.session_state.messages.append({"role": "user", "content": question})
+    with st.chat_message("user"):
+        st.write(question)
+
+    # Run agent
+    schema = load_schema()
+    with st.chat_message("assistant"):
+        with st.spinner("Thinking…"):
+            result = run_agent(question, schema, _history_for_agent())
+
+        assistant_msg = {
+            "role": "assistant",
+            "content": result["answer"],
+            "sql": result["sql"],
+            "result_json": result["result_json"],
+        }
+        st.session_state.messages.append(assistant_msg)
+        st.session_state.request_count += 1
+        _render_assistant_message(assistant_msg)
