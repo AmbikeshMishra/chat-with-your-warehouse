@@ -106,4 +106,4 @@ I'm **Ambikesh Mishra** — a freelance AI engineer with 21 years in enterprise 
 
 If you want a production version of this — connected to your own warehouse, secured with SSO, and deployed in your cloud — let's talk.
 
-**[LinkedIn](https://www.linkedin.com/in/ambikeshmishra)** · **m.ambikesh@gmail.com**
+**[LinkedIn](https://www.linkedin.com/in/ambikesh-mishra-2775b91b/)** · **m.ambikesh@gmail.com**
