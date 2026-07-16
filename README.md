@@ -2,7 +2,7 @@
 
 > Ask your Snowflake insurance data questions in plain English — get answers, charts, and the SQL behind them.
 
-**[Live demo →](https://chat-with-your-warehouse-huwcn89eabxkvas9dbfu6i.streamlit.app/)**
+**[Live demo →](https://chat-with-your-warehouse-mee5ypvwljlpme2373mqym.streamlit.app/)**
 
 ![Demo GIF](demo.gif)
 
