@@ -7,3 +7,5 @@ venv/
 *.egg-info/
 data/*.csv
 data/*.parquet
+Error_image/
+project1_brief.md
