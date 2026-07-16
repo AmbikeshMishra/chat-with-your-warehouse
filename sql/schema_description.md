@@ -1,6 +1,16 @@
+
 # INSURANCE_DB.CLAIMS — Schema Reference
 
 Used by the LangGraph agent as a cached schema prompt (loaded once per session, not resent every turn).
+
+## IMPORTANT — how to reference tables and views
+ALWAYS use the fully qualified three-part name: DATABASE.SCHEMA.OBJECT
+  CORRECT:   SELECT ... FROM INSURANCE_DB.CLAIMS.V_CLAIMS_SUMMARY
+  CORRECT:   SELECT ... FROM INSURANCE_DB.CLAIMS.FACT_CLAIMS
+  CORRECT:   SELECT ... FROM INSURANCE_DB.CLAIMS.DIM_POLICY_HOLDER
+  CORRECT:   SELECT ... FROM INSURANCE_DB.CLAIMS.DIM_POLICY
+  WRONG:     SELECT ... FROM V_CLAIMS_SUMMARY          ← missing database and schema
+  WRONG:     SELECT ... FROM INSURANCE_DB.V_CLAIMS_SUMMARY  ← missing schema
 
 ## Tables
 
@@ -58,8 +68,31 @@ Prefer this view for single-table-style questions about claims.
 - FACT_CLAIMS.policy_holder_id → DIM_POLICY_HOLDER.policy_holder_id
 - DIM_POLICY.policy_holder_id → DIM_POLICY_HOLDER.policy_holder_id
 
+## Data coverage
+- claim_date ranges from 2025-01-01 to 2026-07-15
+- Today's date in Snowflake: CURRENT_DATE() → 2026-07-16
+- Current quarter: Q3 2026 (Jul–Sep 2026)
+- Last quarter: Q2 2026 (Apr–Jun 2026)
+
+## Snowflake date patterns — use these exactly
+- **Last quarter date range:**
+  claim_date >= DATE_TRUNC('quarter', DATEADD(quarter, -1, CURRENT_DATE()))
+  AND claim_date < DATE_TRUNC('quarter', CURRENT_DATE())
+- **This year:** YEAR(claim_date) = YEAR(CURRENT_DATE())
+- **Last year:** YEAR(claim_date) = YEAR(CURRENT_DATE()) - 1
+- **By month:** TO_CHAR(DATE_TRUNC('month', claim_date), 'YYYY-MM') AS month  ← always use this format, never MONTH() alone
+- **By quarter:** QUARTER(claim_date) AS quarter, YEAR(claim_date) AS year
+
 ## Common query patterns
-- **Claims by region:** JOIN FACT_CLAIMS + DIM_POLICY_HOLDER, GROUP BY region
-- **Claim approval rate:** COUNT(*) FILTER (WHERE claim_status='Approved') / COUNT(*)
-- **Total payouts by quarter:** SUM(approved_amount) GROUP BY QUARTER(claim_date)
-- **Holders with multiple claims:** COUNT(claim_id) > 1 GROUP BY policy_holder_id
+- **Claims by region:** GROUP BY region, SUM(approved_amount)
+- **Payout = approved_amount** (not claim_amount). For total payouts include Approved AND Settled status. approved_amount is NULL for Pending, 0.00 for Denied.
+- **Percentage/comparison queries:** ALWAYS use long format (one row per category), never wide format (one column per metric).
+  CORRECT: SELECT claim_status, ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER(), 1) AS percentage FROM INSURANCE_DB.CLAIMS.FACT_CLAIMS GROUP BY claim_status ORDER BY percentage DESC
+  WRONG:   SELECT COUNT(CASE WHEN claim_status='Approved'...) AS pct_approved, COUNT(CASE WHEN claim_status='Denied'...) AS pct_denied ← never do this
+- **Total payouts by quarter:** SUM(approved_amount) GROUP BY YEAR(claim_date), QUARTER(claim_date)
+- **Holders with multiple claims:** Always show policy_holder_name (never policy_holder_id) as the label. Example:
+  SELECT h.full_name AS policy_holder_name, COUNT(f.claim_id) AS claim_count
+  FROM INSURANCE_DB.CLAIMS.FACT_CLAIMS f
+  JOIN INSURANCE_DB.CLAIMS.DIM_POLICY_HOLDER h ON h.policy_holder_id = f.policy_holder_id
+  GROUP BY h.full_name HAVING COUNT(f.claim_id) > 3 ORDER BY claim_count DESC
+- **General rule:** Never SELECT numeric ID columns (policy_holder_id, policy_id, claim_id) as the only label — always JOIN to get the human-readable name.

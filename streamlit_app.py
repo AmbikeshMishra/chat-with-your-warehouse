@@ -44,29 +44,57 @@ def _try_chart(result_json: str) -> None:
     if df.empty:
         return
 
-    numeric = df.select_dtypes(include="number").columns.tolist()
-    dates = df.select_dtypes(include=["datetime", "datetimetz"]).columns.tolist()
-    cats = df.select_dtypes(include=["object", "category"]).columns.tolist()
-
-    # Try to coerce string columns that look like dates
-    if not dates and cats:
-        for col in cats:
+    # Try to coerce object columns to datetime, then numeric
+    for col in df.select_dtypes(include="object").columns:
+        try:
+            df[col] = pd.to_datetime(df[col])
+        except Exception:
             try:
-                df[col] = pd.to_datetime(df[col])
-                dates.append(col)
-                cats.remove(col)
-                break
+                df[col] = pd.to_numeric(df[col])
             except Exception:
                 pass
+
+    numeric = df.select_dtypes(include="number").columns.tolist()
+    dates   = df.select_dtypes(include=["datetime", "datetimetz"]).columns.tolist()
+    cats    = df.select_dtypes(include=["object", "category"]).columns.tolist()
 
     if not numeric:
         return
 
-    y = numeric[0]
+    # Single-row wide result (e.g. pct_approved + pct_denied columns) → melt to long format
+    if len(df) == 1 and len(numeric) > 1 and not dates and not cats:
+        melted = df[numeric].T.reset_index()
+        melted.columns = ["category", "value"]
+        fig = px.bar(melted, x="category", y="value")
+        st.plotly_chart(fig, use_container_width=True)
+        return
+
+    # Columns whose name suggests they are IDs or dimensions, not measures
+    id_cols = [c for c in numeric if c.lower().endswith("_id") or c.lower() == "id"]
+    # Promote ID columns to categorical so they become x-axis candidates
+    for col in id_cols:
+        df[col] = df[col].astype(str)
+        numeric.remove(col)
+        cats.append(col)
+
+    if not numeric:
+        return
+
+    # Exclude date-like numeric columns (e.g. Unix timestamps) from measure candidates
+    _date_keywords = ("date", "time", "year", "month", "day", "quarter")
+    measure_candidates = [c for c in numeric if not any(k in c.lower() for k in _date_keywords)]
+    if not measure_candidates:
+        measure_candidates = numeric
+    # Best y = measure column with largest mean absolute value
+    y = max(measure_candidates, key=lambda c: df[c].abs().mean())
+    x_num = [c for c in numeric if c != y]
+
     if dates:
-        fig = px.line(df, x=dates[0], y=y, markers=True)
+        fig = px.line(df.sort_values(dates[0]), x=dates[0], y=y, markers=True)
     elif cats:
         fig = px.bar(df, x=cats[0], y=y)
+    elif x_num:
+        fig = px.bar(df.sort_values(x_num[0]), x=x_num[0], y=y)
     else:
         return
 

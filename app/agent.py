@@ -45,8 +45,12 @@ Current question: {state['question']}
 Rules:
 - Write a valid Snowflake SQL SELECT query.
 - Never use INSERT, UPDATE, DELETE, DROP, CREATE, ALTER, TRUNCATE, or any DML/DDL.
+- ALWAYS use fully qualified three-part names: INSURANCE_DB.CLAIMS.tablename
+  Write: FROM INSURANCE_DB.CLAIMS.V_CLAIMS_SUMMARY
+  Write: FROM INSURANCE_DB.CLAIMS.FACT_CLAIMS
+  NEVER write: FROM V_CLAIMS_SUMMARY or FROM INSURANCE_DB.V_CLAIMS_SUMMARY
 - Use V_CLAIMS_SUMMARY for simple single-topic questions; JOIN tables when needed.
-- Add LIMIT 500 unless the question asks for aggregated totals.
+- Add LIMIT 50 for detail/row-level queries. For aggregation/GROUP BY queries do NOT add LIMIT — return all groups so charts show all categories.
 - If the question is too ambiguous to answer, respond with exactly:
   CLARIFY: <one specific question to ask the user>
 - Return ONLY raw SQL or the CLARIFY line. No markdown fences, no explanation.
@@ -91,6 +95,7 @@ Failed SQL:
 Error message:
 {state['error']}
 
+Always use fully qualified names: INSURANCE_DB.CLAIMS.tablename
 Return ONLY the corrected SQL. No markdown, no explanation.
 """
     response = get_llm(state["api_key"]).invoke(prompt)
